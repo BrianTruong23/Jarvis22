@@ -1,0 +1,30 @@
+services:
+  poller:
+    build: .
+    command: python -m jarvis poll
+    env_file: .env
+    volumes:
+      - db-data:/app/data
+      - workspace:/tmp/jarvis-workspace
+    environment:
+      - DB_PATH=/app/data/jarvis.db
+    restart: unless-stopped
+
+  webhook:
+    build: .
+    command: python -m jarvis webhook
+    env_file: .env
+    ports:
+      - "${WEBHOOK_PORT:-8080}:${WEBHOOK_PORT:-8080}"
+    volumes:
+      - db-data:/app/data
+      - workspace:/tmp/jarvis-workspace
+    environment:
+      - DB_PATH=/app/data/jarvis.db
+    restart: unless-stopped
+    profiles:
+      - webhook
+
+volumes:
+  db-data:
+  workspace:
