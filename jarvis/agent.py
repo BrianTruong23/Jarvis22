@@ -41,7 +41,6 @@ def run_agent(config: Config, issue: IssueContext, work_dir: Path) -> str:
         "--dangerously-skip-permissions",
         "--model", config.claude_model,
         "--max-turns", "30",
-        "--verbose",
     ]
 
     log.info("Spawning Claude Code for issue #%d in %s", issue.number, work_dir)
