@@ -22,6 +22,11 @@ def cmd_poll(config: Config, args: argparse.Namespace) -> None:
     run_poller(config)
 
 
+def cmd_poll_once(config: Config, args: argparse.Namespace) -> None:
+    from jarvis.poller import run_poll_once
+    run_poll_once(config)
+
+
 def cmd_run(config: Config, args: argparse.Namespace) -> None:
     from jarvis.orchestrator import Orchestrator
     from jarvis.models import Trigger
@@ -80,6 +85,7 @@ def main() -> None:
     sub = parser.add_subparsers(dest="command", required=True)
 
     sub.add_parser("poll", help="Start polling loop")
+    sub.add_parser("poll-once", help="Single poll cycle with session timeout (for cron)")
 
     run_parser = sub.add_parser("run", help="Process a single issue")
     run_parser.add_argument("issue_number", type=int, help="GitHub issue number")
@@ -98,7 +104,7 @@ def main() -> None:
     setup_logging(config.log_level)
 
     # Validate config for commands that need external services
-    if args.command in ("poll", "run", "webhook"):
+    if args.command in ("poll", "poll-once", "run", "webhook"):
         errors = config.validate()
         if errors:
             for e in errors:
@@ -107,6 +113,7 @@ def main() -> None:
 
     handler = {
         "poll": cmd_poll,
+        "poll-once": cmd_poll_once,
         "run": cmd_run,
         "webhook": cmd_webhook,
         "status": cmd_status,
