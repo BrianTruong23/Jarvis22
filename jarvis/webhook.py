@@ -48,15 +48,21 @@ class WebhookHandler(BaseHTTPRequestHandler):
             self._respond(200, {"status": "ignored", "label": label_name})
             return
 
-        issue_number = payload["issue"]["number"]
-        log.info("Webhook: issue #%d labeled with %s", issue_number, label_name)
+        # Extract repo full_name from webhook payload
+        repo_name = payload.get("repository", {}).get("full_name", "")
+        if repo_name not in self.config.target_repos:
+            self._respond(200, {"status": "ignored", "repo": repo_name})
+            return
 
-        self._respond(200, {"status": "accepted", "issue": issue_number})
+        issue_number = payload["issue"]["number"]
+        log.info("Webhook: [%s] issue #%d labeled with %s", repo_name, issue_number, label_name)
+
+        self._respond(200, {"status": "accepted", "repo": repo_name, "issue": issue_number})
 
         try:
-            self.orchestrator.run_single(issue_number, Trigger.WEBHOOK)
+            self.orchestrator.run_single(issue_number, repo_name, Trigger.WEBHOOK)
         except Exception:
-            log.exception("Webhook: failed to process issue #%d", issue_number)
+            log.exception("Webhook: failed to process [%s] issue #%d", repo_name, issue_number)
 
     def _verify_signature(self, body: bytes) -> bool:
         secret = self.config.webhook_secret

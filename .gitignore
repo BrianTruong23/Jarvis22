@@ -25,6 +25,9 @@ env/
 *.swp
 *.swo
 
+# Secrets
+.ssh-access.txt
+
 # OS
 .DS_Store
 Thumbs.db

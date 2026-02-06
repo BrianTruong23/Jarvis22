@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS runs (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     issue_number INTEGER NOT NULL,
     issue_title  TEXT NOT NULL,
+    repo         TEXT NOT NULL DEFAULT '',
     status       TEXT NOT NULL DEFAULT 'pending',
     trigger      TEXT NOT NULL,
     branch       TEXT,
@@ -22,6 +23,10 @@ CREATE TABLE IF NOT EXISTS runs (
     updated_at   TEXT NOT NULL DEFAULT (datetime('now'))
 );
 """
+
+MIGRATIONS = [
+    "ALTER TABLE runs ADD COLUMN repo TEXT NOT NULL DEFAULT '';",
+]
 
 
 class Database:
@@ -38,12 +43,24 @@ class Database:
     def _init_schema(self) -> None:
         with self._connect() as conn:
             conn.executescript(SCHEMA)
+            self._migrate(conn)
+
+    def _migrate(self, conn: sqlite3.Connection) -> None:
+        cursor = conn.execute("PRAGMA table_info(runs)")
+        columns = {row[1] for row in cursor.fetchall()}
+        if "repo" not in columns:
+            for sql in MIGRATIONS:
+                try:
+                    conn.execute(sql)
+                except sqlite3.OperationalError:
+                    pass
 
     def _row_to_run(self, row: sqlite3.Row) -> Run:
         return Run(
             id=row["id"],
             issue_number=row["issue_number"],
             issue_title=row["issue_title"],
+            repo=row["repo"],
             status=RunStatus(row["status"]),
             trigger=Trigger(row["trigger"]),
             branch=row["branch"],
@@ -54,11 +71,11 @@ class Database:
             updated_at=row["updated_at"],
         )
 
-    def create_run(self, issue_number: int, issue_title: str, trigger: Trigger) -> Run:
+    def create_run(self, issue_number: int, issue_title: str, trigger: Trigger, repo: str = "") -> Run:
         with self._connect() as conn:
             cursor = conn.execute(
-                "INSERT INTO runs (issue_number, issue_title, trigger) VALUES (?, ?, ?)",
-                (issue_number, issue_title, trigger.value),
+                "INSERT INTO runs (issue_number, issue_title, trigger, repo) VALUES (?, ?, ?, ?)",
+                (issue_number, issue_title, trigger.value, repo),
             )
             row = conn.execute("SELECT * FROM runs WHERE id = ?", (cursor.lastrowid,)).fetchone()
         return self._row_to_run(row)
@@ -109,12 +126,18 @@ class Database:
             raise ValueError(f"Run {run_id} not found")
         return self._row_to_run(row)
 
-    def get_runs_for_issue(self, issue_number: int) -> list[Run]:
+    def get_runs_for_issue(self, issue_number: int, repo: str = "") -> list[Run]:
         with self._connect() as conn:
-            rows = conn.execute(
-                "SELECT * FROM runs WHERE issue_number = ? ORDER BY created_at DESC",
-                (issue_number,),
-            ).fetchall()
+            if repo:
+                rows = conn.execute(
+                    "SELECT * FROM runs WHERE issue_number = ? AND repo = ? ORDER BY created_at DESC",
+                    (issue_number, repo),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM runs WHERE issue_number = ? ORDER BY created_at DESC",
+                    (issue_number,),
+                ).fetchall()
         return [self._row_to_run(r) for r in rows]
 
     def get_all_runs(self) -> list[Run]:
@@ -122,11 +145,17 @@ class Database:
             rows = conn.execute("SELECT * FROM runs ORDER BY created_at DESC").fetchall()
         return [self._row_to_run(r) for r in rows]
 
-    def is_issue_claimed(self, issue_number: int) -> bool:
+    def is_issue_claimed(self, issue_number: int, repo: str = "") -> bool:
         """Check if issue has a pending, running, or successful run."""
         with self._connect() as conn:
-            row = conn.execute(
-                "SELECT COUNT(*) as cnt FROM runs WHERE issue_number = ? AND status IN (?, ?, ?)",
-                (issue_number, RunStatus.PENDING.value, RunStatus.RUNNING.value, RunStatus.SUCCESS.value),
-            ).fetchone()
+            if repo:
+                row = conn.execute(
+                    "SELECT COUNT(*) as cnt FROM runs WHERE issue_number = ? AND repo = ? AND status IN (?, ?, ?)",
+                    (issue_number, repo, RunStatus.PENDING.value, RunStatus.RUNNING.value, RunStatus.SUCCESS.value),
+                ).fetchone()
+            else:
+                row = conn.execute(
+                    "SELECT COUNT(*) as cnt FROM runs WHERE issue_number = ? AND status IN (?, ?, ?)",
+                    (issue_number, RunStatus.PENDING.value, RunStatus.RUNNING.value, RunStatus.SUCCESS.value),
+                ).fetchone()
         return row["cnt"] > 0

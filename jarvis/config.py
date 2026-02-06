@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
 class Config:
     github_token: str = ""
-    target_repo: str = ""
+    target_repos: tuple[str, ...] = ()
     anthropic_api_key: str = ""
     poll_interval: int = 60
     issue_label: str = "jarvis"
@@ -25,9 +25,11 @@ class Config:
 
     @classmethod
     def from_env(cls) -> Config:
+        raw_repos = os.environ.get("TARGET_REPO", "")
+        repos = tuple(r.strip() for r in raw_repos.split(",") if r.strip())
         return cls(
             github_token=os.environ.get("GITHUB_TOKEN", ""),
-            target_repo=os.environ.get("TARGET_REPO", ""),
+            target_repos=repos,
             anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY", ""),
             poll_interval=int(os.environ.get("POLL_INTERVAL", "60")),
             issue_label=os.environ.get("ISSUE_LABEL", "jarvis"),
@@ -46,8 +48,9 @@ class Config:
         errors = []
         if not self.github_token:
             errors.append("GITHUB_TOKEN is required")
-        if not self.target_repo:
-            errors.append("TARGET_REPO is required")
-        if self.target_repo and "/" not in self.target_repo:
-            errors.append("TARGET_REPO must be in owner/repo format (e.g. BrianTruong23/Jarvis22)")
+        if not self.target_repos:
+            errors.append("TARGET_REPO is required (comma-separated for multiple)")
+        for repo in self.target_repos:
+            if "/" not in repo:
+                errors.append(f"TARGET_REPO '{repo}' must be in owner/repo format (e.g. BrianTruong23/my-project)")
         return errors

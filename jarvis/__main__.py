@@ -25,8 +25,18 @@ def cmd_poll(config: Config, args: argparse.Namespace) -> None:
 def cmd_run(config: Config, args: argparse.Namespace) -> None:
     from jarvis.orchestrator import Orchestrator
     from jarvis.models import Trigger
+
+    repo = args.repo
+    if not repo:
+        if len(config.target_repos) == 1:
+            repo = config.target_repos[0]
+        else:
+            print(f"Error: --repo is required when multiple repos are configured.", file=sys.stderr)
+            print(f"  Available repos: {', '.join(config.target_repos)}", file=sys.stderr)
+            sys.exit(1)
+
     orch = Orchestrator(config)
-    orch.run_single(args.issue_number, Trigger.CLI)
+    orch.run_single(args.issue_number, repo, Trigger.CLI)
 
 
 def cmd_webhook(config: Config, args: argparse.Namespace) -> None:
@@ -48,9 +58,10 @@ def cmd_status(config: Config, args: argparse.Namespace) -> None:
         return
 
     for r in runs:
+        repo_tag = f" [{r.repo}]" if r.repo else ""
         pr = f" -> {r.pr_url}" if r.pr_url else ""
         err = f" | error: {r.error[:80]}" if r.error else ""
-        print(f"  #{r.id:>4}  issue={r.issue_number:<6} {r.status.value:<8} {r.trigger.value:<8} {r.created_at}{pr}{err}")
+        print(f"  #{r.id:>4}  issue={r.issue_number:<6} {r.status.value:<8} {r.trigger.value:<8}{repo_tag} {r.created_at}{pr}{err}")
 
 
 def cmd_report(config: Config, args: argparse.Namespace) -> None:
@@ -72,6 +83,7 @@ def main() -> None:
 
     run_parser = sub.add_parser("run", help="Process a single issue")
     run_parser.add_argument("issue_number", type=int, help="GitHub issue number")
+    run_parser.add_argument("--repo", type=str, default="", help="Target repo (owner/repo). Required if multiple repos configured.")
 
     sub.add_parser("webhook", help="Start webhook server")
 

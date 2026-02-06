@@ -24,6 +24,7 @@ class IssueContext:
     number: int
     title: str
     body: str
+    repo: str = ""
     labels: list[str] = field(default_factory=list)
 
 
@@ -34,6 +35,7 @@ class Run:
     issue_title: str
     status: RunStatus
     trigger: Trigger
+    repo: str = ""
     branch: str | None = None
     pr_url: str | None = None
     error: str | None = None

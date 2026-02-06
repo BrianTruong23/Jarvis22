@@ -16,9 +16,10 @@ log = logging.getLogger(__name__)
 
 
 class GitHubClient:
-    def __init__(self, config: Config) -> None:
+    def __init__(self, config: Config, repo_name: str) -> None:
         self._gh = Github(config.github_token)
-        self._repo: Repository = self._gh.get_repo(config.target_repo)
+        self._repo: Repository = self._gh.get_repo(repo_name)
+        self._repo_name = repo_name
         self._config = config
 
     @property
@@ -26,8 +27,12 @@ class GitHubClient:
         return self._repo
 
     @property
+    def repo_name(self) -> str:
+        return self._repo_name
+
+    @property
     def clone_url(self) -> str:
-        return f"https://x-access-token:{self._config.github_token}@github.com/{self._config.target_repo}.git"
+        return f"https://x-access-token:{self._config.github_token}@github.com/{self._repo_name}.git"
 
     def get_labeled_issues(self) -> list[IssueContext]:
         issues: list[IssueContext] = []
@@ -39,6 +44,7 @@ class GitHubClient:
                     number=issue.number,
                     title=issue.title,
                     body=issue.body or "",
+                    repo=self._repo_name,
                     labels=[l.name for l in issue.labels],
                 )
             )
@@ -50,6 +56,7 @@ class GitHubClient:
             number=issue.number,
             title=issue.title,
             body=issue.body or "",
+            repo=self._repo_name,
             labels=[l.name for l in issue.labels],
         )
 
@@ -61,13 +68,13 @@ class GitHubClient:
             head=branch,
             base=default_branch,
         )
-        log.info("Created PR #%d: %s", pr.number, pr.html_url)
+        log.info("[%s] Created PR #%d: %s", self._repo_name, pr.number, pr.html_url)
         return pr.html_url
 
     def comment_on_issue(self, issue_number: int, body: str) -> None:
         issue = self._repo.get_issue(issue_number)
         issue.create_comment(body)
-        log.info("Commented on issue #%d", issue_number)
+        log.info("[%s] Commented on issue #%d", self._repo_name, issue_number)
 
     def swap_labels(self, issue_number: int) -> None:
         issue = self._repo.get_issue(issue_number)
@@ -76,4 +83,4 @@ class GitHubClient:
         except Exception:
             log.debug("Label %s not found on issue #%d", self._config.issue_label, issue_number)
         issue.add_to_labels(self._config.done_label)
-        log.info("Swapped labels on issue #%d: %s -> %s", issue_number, self._config.issue_label, self._config.done_label)
+        log.info("[%s] Swapped labels on issue #%d", self._repo_name, issue_number)

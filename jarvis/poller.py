@@ -13,9 +13,10 @@ log = logging.getLogger(__name__)
 
 def run_poller(config: Config) -> None:
     orch = Orchestrator(config)
+    repos = ", ".join(config.target_repos)
     log.info(
-        "Starting poller: repo=%s, label=%s, interval=%ds",
-        config.target_repo,
+        "Starting poller: repos=[%s], label=%s, interval=%ds",
+        repos,
         config.issue_label,
         config.poll_interval,
     )
@@ -24,7 +25,7 @@ def run_poller(config: Config) -> None:
         try:
             count = orch.poll_once()
             if count:
-                log.info("Processed %d issue(s)", count)
+                log.info("Processed %d issue(s) across repos", count)
             else:
                 log.debug("No new issues found")
         except KeyboardInterrupt:
