@@ -44,8 +44,15 @@ class WebhookHandler(BaseHTTPRequestHandler):
             return
 
         label_name = payload.get("label", {}).get("name", "")
-        if label_name != self.config.issue_label:
+        trigger_labels = {self.config.issue_label, self.config.ready_label}
+        if label_name not in trigger_labels:
             self._respond(200, {"status": "ignored", "label": label_name})
+            return
+
+        # Require both jarvis + ready labels on the issue for real-time processing
+        issue_labels = [l.get("name", "") for l in payload.get("issue", {}).get("labels", [])]
+        if not (self.config.issue_label in issue_labels and self.config.ready_label in issue_labels):
+            self._respond(200, {"status": "ignored", "reason": "missing required labels"})
             return
 
         # Extract repo full_name from webhook payload
@@ -55,7 +62,7 @@ class WebhookHandler(BaseHTTPRequestHandler):
             return
 
         issue_number = payload["issue"]["number"]
-        log.info("Webhook: [%s] issue #%d labeled with %s", repo_name, issue_number, label_name)
+        log.info("Webhook: [%s] issue #%d labeled with %s (both labels present)", repo_name, issue_number, label_name)
 
         self._respond(200, {"status": "accepted", "repo": repo_name, "issue": issue_number})
 
