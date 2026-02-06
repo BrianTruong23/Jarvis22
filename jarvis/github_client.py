@@ -35,9 +35,18 @@ class GitHubClient:
         return f"https://x-access-token:{self._config.github_token}@github.com/{self._repo_name}.git"
 
     def get_labeled_issues(self) -> list[IssueContext]:
+        """Get issues with both the jarvis label and the ready label."""
+        required_labels = [self._config.issue_label]
+        if self._config.ready_label:
+            required_labels.append(self._config.ready_label)
+
         issues: list[IssueContext] = []
-        for issue in self._repo.get_issues(state="open", labels=[self._config.issue_label]):
+        for issue in self._repo.get_issues(state="open", labels=required_labels):
             if issue.pull_request is not None:
+                continue
+            issue_labels = [l.name for l in issue.labels]
+            # Double-check both labels are present (PyGithub may do OR matching)
+            if not all(lbl in issue_labels for lbl in required_labels):
                 continue
             issues.append(
                 IssueContext(
@@ -45,7 +54,7 @@ class GitHubClient:
                     title=issue.title,
                     body=issue.body or "",
                     repo=self._repo_name,
-                    labels=[l.name for l in issue.labels],
+                    labels=issue_labels,
                 )
             )
         return issues
