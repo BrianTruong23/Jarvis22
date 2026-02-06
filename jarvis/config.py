@@ -48,8 +48,6 @@ class Config:
             errors.append("GITHUB_TOKEN is required")
         if not self.target_repo:
             errors.append("TARGET_REPO is required")
-        if not self.anthropic_api_key:
-            errors.append("ANTHROPIC_API_KEY is required")
-        if "/" not in self.target_repo:
-            errors.append("TARGET_REPO must be in owner/repo format")
+        if self.target_repo and "/" not in self.target_repo:
+            errors.append("TARGET_REPO must be in owner/repo format (e.g. BrianTruong23/Jarvis22)")
         return errors

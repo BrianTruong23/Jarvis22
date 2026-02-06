@@ -58,8 +58,8 @@ All configuration is via environment variables. See `.env.example` for the full 
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `GITHUB_TOKEN` | Yes | — | GitHub PAT with repo scope |
-| `TARGET_REPO` | Yes | — | `owner/repo` format |
-| `ANTHROPIC_API_KEY` | Yes | — | For Claude Code CLI |
+| `TARGET_REPO` | Yes | — | `owner/repo` format (e.g. `BrianTruong23/my-project`) |
+| `ANTHROPIC_API_KEY` | No | — | Only if not using `claude login` (Claude Plus OAuth) |
 | `POLL_INTERVAL` | No | `60` | Seconds between polls |
 | `ISSUE_LABEL` | No | `jarvis` | Label to watch |
 | `DONE_LABEL` | No | `jarvis-done` | Label added on completion |
@@ -115,7 +115,7 @@ GitHub Issue (labeled "jarvis")
 
 - A VPS with Docker and Docker Compose installed (Ubuntu 22.04+ recommended)
 - A GitHub PAT with `repo` scope
-- An Anthropic API key
+- Claude Code CLI installed and authenticated (`claude login` for Claude Plus, or set `ANTHROPIC_API_KEY`)
 
 ### Step-by-step
 
@@ -124,20 +124,25 @@ GitHub Issue (labeled "jarvis")
 ssh user@your-vps-ip
 
 # 2. Clone the repo
-git clone https://github.com/thangtruong/Jarvis22.git
+git clone https://github.com/BrianTruong23/Jarvis22.git
 cd Jarvis22
 
-# 3. Create and fill in your .env
-cp .env.example .env
-nano .env   # Set GITHUB_TOKEN, TARGET_REPO, ANTHROPIC_API_KEY
+# 3. Authenticate Claude Code (pick one):
+#    Option A — Claude Plus subscriber:
+claude login
+#    Option B — API key: set ANTHROPIC_API_KEY in .env (step 4)
 
-# 4. Start the poller (runs in background, restarts on crash)
+# 4. Create and fill in your .env
+cp .env.example .env
+nano .env   # Set GITHUB_TOKEN, TARGET_REPO (and ANTHROPIC_API_KEY if using option B)
+
+# 5. Start the poller (runs in background, restarts on crash)
 docker compose up -d
 
-# 5. Check logs
+# 6. Check logs
 docker compose logs -f
 
-# 6. (Optional) Also run the webhook server
+# 7. (Optional) Also run the webhook server
 docker compose --profile webhook up -d
 ```
 

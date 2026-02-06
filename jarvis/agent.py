@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import subprocess
 from pathlib import Path
 
@@ -46,11 +47,12 @@ def run_agent(config: Config, issue: IssueContext, work_dir: Path) -> str:
     log.info("Spawning Claude Code for issue #%d in %s", issue.number, work_dir)
     log.debug("Prompt: %s", prompt[:200])
 
-    env = {
-        "ANTHROPIC_API_KEY": config.anthropic_api_key,
-        "PATH": "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
-        "HOME": str(Path.home()),
-    }
+    # Inherit the current environment so Claude Code can use existing auth
+    # (OAuth login via `claude login` for Claude Plus subscribers).
+    # ANTHROPIC_API_KEY is passed through if set, but is not required.
+    env = os.environ.copy()
+    if config.anthropic_api_key:
+        env["ANTHROPIC_API_KEY"] = config.anthropic_api_key
 
     result = subprocess.run(
         cmd,

@@ -6,6 +6,7 @@ services:
     volumes:
       - db-data:/app/data
       - workspace:/tmp/jarvis-workspace
+      - ~/.claude:/root/.claude  # Claude Code auth (from `claude login`)
     environment:
       - DB_PATH=/app/data/jarvis.db
     restart: unless-stopped
@@ -19,6 +20,7 @@ services:
     volumes:
       - db-data:/app/data
       - workspace:/tmp/jarvis-workspace
+      - ~/.claude:/root/.claude
     environment:
       - DB_PATH=/app/data/jarvis.db
     restart: unless-stopped
