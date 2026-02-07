@@ -74,6 +74,39 @@ class Workspace:
         self._run(["git", "checkout", "-b", branch, f"origin/{default}"])
         log.info("[%s] Created branch %s", self._repo_name, branch)
 
+    def check_diff_limits(self, max_files: int, max_loc: int) -> tuple[bool, str]:
+        """Check if the current diff exceeds file/LOC limits.
+
+        Returns (within_limits, detail_message).
+        """
+        try:
+            numstat = self._run(["git", "diff", "--numstat", "HEAD"])
+        except RuntimeError:
+            return True, "No diff to check"
+
+        if not numstat:
+            return True, "No changes"
+
+        files_changed = 0
+        total_loc = 0
+        for line in numstat.splitlines():
+            parts = line.split("\t")
+            if len(parts) < 3:
+                continue
+            files_changed += 1
+            added = int(parts[0]) if parts[0] != "-" else 0
+            removed = int(parts[1]) if parts[1] != "-" else 0
+            total_loc += added + removed
+
+        detail = f"{files_changed} files changed, {total_loc} LOC"
+
+        if files_changed > max_files:
+            return False, f"Exceeds file limit: {detail} (max {max_files} files)"
+        if total_loc > max_loc:
+            return False, f"Exceeds LOC limit: {detail} (max {max_loc} LOC)"
+
+        return True, detail
+
     def commit_and_push(self, branch: str, message: str) -> bool:
         status = self._run(["git", "status", "--porcelain"])
         if not status:

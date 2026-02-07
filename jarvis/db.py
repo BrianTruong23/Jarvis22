@@ -26,6 +26,8 @@ CREATE TABLE IF NOT EXISTS runs (
 
 MIGRATIONS = [
     "ALTER TABLE runs ADD COLUMN repo TEXT NOT NULL DEFAULT '';",
+    "ALTER TABLE runs ADD COLUMN agent_name TEXT;",
+    "ALTER TABLE runs ADD COLUMN tokens_used INTEGER;",
 ]
 
 
@@ -48,12 +50,11 @@ class Database:
     def _migrate(self, conn: sqlite3.Connection) -> None:
         cursor = conn.execute("PRAGMA table_info(runs)")
         columns = {row[1] for row in cursor.fetchall()}
-        if "repo" not in columns:
-            for sql in MIGRATIONS:
-                try:
-                    conn.execute(sql)
-                except sqlite3.OperationalError:
-                    pass
+        for sql in MIGRATIONS:
+            try:
+                conn.execute(sql)
+            except sqlite3.OperationalError:
+                pass
 
     def _row_to_run(self, row: sqlite3.Row) -> Run:
         return Run(
@@ -67,6 +68,8 @@ class Database:
             pr_url=row["pr_url"],
             error=row["error"],
             agent_output=row["agent_output"],
+            agent_name=row["agent_name"],
+            tokens_used=row["tokens_used"],
             created_at=row["created_at"],
             updated_at=row["updated_at"],
         )
@@ -89,6 +92,8 @@ class Database:
         pr_url: str | None = None,
         error: str | None = None,
         agent_output: str | None = None,
+        agent_name: str | None = None,
+        tokens_used: int | None = None,
     ) -> Run:
         updates: list[str] = []
         params: list[object] = []
@@ -107,6 +112,12 @@ class Database:
         if agent_output is not None:
             updates.append("agent_output = ?")
             params.append(agent_output)
+        if agent_name is not None:
+            updates.append("agent_name = ?")
+            params.append(agent_name)
+        if tokens_used is not None:
+            updates.append("tokens_used = ?")
+            params.append(tokens_used)
         if not updates:
             return self.get_run(run_id)
         updates.append("updated_at = datetime('now')")

@@ -35,9 +35,13 @@ class GitHubClient:
         return f"https://x-access-token:{self._config.github_token}@github.com/{self._repo_name}.git"
 
     def get_labeled_issues(self) -> list[IssueContext]:
+        """Get open issues with the jarvis label (cron/poll trigger)."""
         issues: list[IssueContext] = []
         for issue in self._repo.get_issues(state="open", labels=[self._config.issue_label]):
             if issue.pull_request is not None:
+                continue
+            issue_labels = [l.name for l in issue.labels]
+            if self._config.issue_label not in issue_labels:
                 continue
             issues.append(
                 IssueContext(
@@ -45,7 +49,7 @@ class GitHubClient:
                     title=issue.title,
                     body=issue.body or "",
                     repo=self._repo_name,
-                    labels=[l.name for l in issue.labels],
+                    labels=issue_labels,
                 )
             )
         return issues

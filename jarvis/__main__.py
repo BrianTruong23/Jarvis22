@@ -23,16 +23,8 @@ def cmd_poll(config: Config, args: argparse.Namespace) -> None:
 
 
 def cmd_poll_once(config: Config, args: argparse.Namespace) -> None:
-    """Run a single poll cycle and exit (used by CRON)."""
-    from jarvis.orchestrator import Orchestrator
-    from jarvis.models import Trigger
-
-    orch = Orchestrator(config)
-    count = orch.poll_once(Trigger.POLL)
-    if count:
-        logging.getLogger(__name__).info("Processed %d issue(s)", count)
-    else:
-        logging.getLogger(__name__).info("No new issues found")
+    from jarvis.poller import run_poll_once
+    run_poll_once(config)
 
 
 def cmd_run(config: Config, args: argparse.Namespace) -> None:
@@ -93,7 +85,7 @@ def main() -> None:
     sub = parser.add_subparsers(dest="command", required=True)
 
     sub.add_parser("poll", help="Start polling loop")
-    sub.add_parser("poll-once", help="Run a single poll cycle and exit (for CRON)")
+    sub.add_parser("poll-once", help="Single poll cycle with session timeout (for cron)")
 
     run_parser = sub.add_parser("run", help="Process a single issue")
     run_parser.add_argument("issue_number", type=int, help="GitHub issue number")

@@ -11,6 +11,8 @@ class RunStatus(str, Enum):
     RUNNING = "running"
     SUCCESS = "success"
     FAILED = "failed"
+    TIMEOUT = "timeout"
+    BLOCKED = "blocked"
 
 
 class Trigger(str, Enum):
@@ -72,6 +74,17 @@ class IssueContext:
 
 
 @dataclass
+class AgentResult:
+    output: str
+    agent_name: str
+    input_tokens: int = 0
+    output_tokens: int = 0
+    total_tokens: int = 0
+    timed_out: bool = False
+    rate_limited: bool = False
+
+
+@dataclass
 class Run:
     id: int | None
     issue_number: int
@@ -83,5 +96,7 @@ class Run:
     pr_url: str | None = None
     error: str | None = None
     agent_output: str | None = None
+    agent_name: str | None = None
+    tokens_used: int | None = None
     created_at: str | None = None
     updated_at: str | None = None
