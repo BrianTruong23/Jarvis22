@@ -53,6 +53,16 @@ class Orchestrator:
 
     def process_issue(self, issue: IssueContext, trigger: Trigger) -> Run:
         handler = self._get_handler(issue.repo)
+
+        # Determine model order from labels
+        model_order = resolve_model_order(issue.labels)
+        log.info(
+            "[%s] Issue #%d model order: %s (labels: %s)",
+            issue.repo, issue.number,
+            [m.value for m in model_order],
+            issue.labels,
+        )
+
         run = self.db.create_run(issue.number, issue.title, trigger, repo=issue.repo)
         run_id = run.id
         branch = handler.workspace.branch_name(issue.number)
@@ -144,6 +154,12 @@ class Orchestrator:
                 log.exception("[%s] Failed to comment on issue #%d", issue.repo, issue.number)
             self._write_run_report(run, agent_result, diff_detail)
             return run
+
+        except AllModelsExhausted as e:
+            # All models failed — log it, will retry next poll cycle
+            log.warning("[%s] All models exhausted for issue #%d, will retry next cycle: %s",
+                        issue.repo, issue.number, e)
+            self.db.update_run(run_id, status=RunStatus.FAILED, error=str(e))
 
         except Exception as e:
             error_msg = str(e)

@@ -21,6 +21,49 @@ class Trigger(str, Enum):
     WEBHOOK = "webhook"
 
 
+class ModelChoice(str, Enum):
+    CLAUDE = "claude"
+    CODEX = "codex"
+    GEMINI = "gemini"
+
+
+# Label -> model mapping
+MODEL_LABELS: dict[str, ModelChoice] = {
+    "jarvis-cl": ModelChoice.CLAUDE,
+    "jarvis-co": ModelChoice.CODEX,
+    "jarvis-gem": ModelChoice.GEMINI,
+}
+
+# Labels that trigger immediate pickup (not waiting for CRON)
+IMMEDIATE_LABELS: set[str] = {"jarvis ready", "jarvis-cl", "jarvis-co", "jarvis-gem"}
+
+# Default fallback order when no model label is specified
+DEFAULT_MODEL_ORDER: list[ModelChoice] = [
+    ModelChoice.CLAUDE,
+    ModelChoice.CODEX,
+    ModelChoice.GEMINI,
+]
+
+
+class AllModelsExhausted(Exception):
+    """Raised when all models in the fallback chain have failed."""
+    pass
+
+
+def resolve_model_order(labels: list[str]) -> list[ModelChoice]:
+    """Return ordered list of models to try based on issue labels."""
+    specified = [MODEL_LABELS[l] for l in labels if l in MODEL_LABELS]
+    if not specified:
+        return list(DEFAULT_MODEL_ORDER)
+    remaining = [m for m in DEFAULT_MODEL_ORDER if m not in specified]
+    return specified + remaining
+
+
+def should_pickup_immediately(labels: list[str]) -> bool:
+    """Return True if the issue should be picked up immediately (not just on CRON)."""
+    return bool(set(labels) & IMMEDIATE_LABELS)
+
+
 @dataclass
 class IssueContext:
     number: int

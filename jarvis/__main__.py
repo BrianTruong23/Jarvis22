@@ -36,7 +36,7 @@ def cmd_run(config: Config, args: argparse.Namespace) -> None:
         if len(config.target_repos) == 1:
             repo = config.target_repos[0]
         else:
-            print(f"Error: --repo is required when multiple repos are configured.", file=sys.stderr)
+            print("Error: --repo is required when multiple repos are configured.", file=sys.stderr)
             print(f"  Available repos: {', '.join(config.target_repos)}", file=sys.stderr)
             sys.exit(1)
 

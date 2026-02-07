@@ -64,6 +64,19 @@ def _run_claude(config: Config, issue: IssueContext, work_dir: Path) -> AgentRes
         "--model", config.claude_model,
         "--max-turns", "30",
     ]
+    log.info("Trying Claude in %s", work_dir)
+    result = subprocess.run(
+        cmd,
+        input=prompt,
+        cwd=work_dir,
+        capture_output=True,
+        text=True,
+        timeout=600,
+        env=env,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"Claude exited with code {result.returncode}: {result.stderr or 'Unknown error'}")
+    return result.stdout
 
     log.info("Spawning Claude Code for issue #%d in %s", issue.number, work_dir)
 
@@ -125,6 +138,9 @@ def _run_claude(config: Config, issue: IssueContext, work_dir: Path) -> AgentRes
         output_tokens=output_tokens,
         total_tokens=total_tokens,
     )
+    if result.returncode != 0:
+        raise RuntimeError(f"Codex exited with code {result.returncode}: {result.stderr or 'Unknown error'}")
+    return result.stdout
 
 
 def _run_codex(config: Config, issue: IssueContext, work_dir: Path) -> AgentResult:
