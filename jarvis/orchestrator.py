@@ -8,7 +8,14 @@ from jarvis.agent import run_agent
 from jarvis.config import Config
 from jarvis.db import Database
 from jarvis.github_client import GitHubClient
-from jarvis.models import IssueContext, RunStatus, Trigger
+from jarvis.models import (
+    AllModelsExhausted,
+    IssueContext,
+    RunStatus,
+    Trigger,
+    resolve_model_order,
+    should_pickup_immediately,
+)
 from jarvis.report import format_failure_comment, format_success_comment
 from jarvis.workspace import Workspace
 
@@ -39,6 +46,16 @@ class Orchestrator:
 
     def process_issue(self, issue: IssueContext, trigger: Trigger) -> None:
         handler = self._get_handler(issue.repo)
+
+        # Determine model order from labels
+        model_order = resolve_model_order(issue.labels)
+        log.info(
+            "[%s] Issue #%d model order: %s (labels: %s)",
+            issue.repo, issue.number,
+            [m.value for m in model_order],
+            issue.labels,
+        )
+
         run = self.db.create_run(issue.number, issue.title, trigger, repo=issue.repo)
         run_id = run.id
         branch = handler.workspace.branch_name(issue.number)
@@ -50,8 +67,8 @@ class Orchestrator:
             handler.workspace.ensure_repo()
             handler.workspace.create_branch(branch)
 
-            # Run agent
-            output = run_agent(self.config, issue, handler.workspace.repo_dir)
+            # Run agent with model fallback chain
+            output = run_agent(self.config, issue, handler.workspace.repo_dir, model_order)
             self.db.update_run(run_id, agent_output=output)
 
             # Commit and push
@@ -84,6 +101,12 @@ class Orchestrator:
 
             log.info("[%s] Issue #%d processed successfully: %s", issue.repo, issue.number, pr_url)
 
+        except AllModelsExhausted as e:
+            # All models failed — log it, will retry next poll cycle
+            log.warning("[%s] All models exhausted for issue #%d, will retry next cycle: %s",
+                        issue.repo, issue.number, e)
+            self.db.update_run(run_id, status=RunStatus.FAILED, error=str(e))
+
         except Exception as e:
             error_msg = str(e)
             log.error("[%s] Failed to process issue #%d: %s", issue.repo, issue.number, error_msg)
@@ -111,7 +134,16 @@ class Orchestrator:
                     log.debug("[%s] Issue #%d already claimed, skipping", repo_name, issue.number)
                     continue
 
-                log.info("[%s] Processing issue #%d: %s", repo_name, issue.number, issue.title)
+                # Pickup priority: webhook only processes immediate issues
+                if trigger == Trigger.WEBHOOK and not should_pickup_immediately(issue.labels):
+                    log.debug(
+                        "[%s] Issue #%d has no immediate label, skipping on webhook trigger",
+                        repo_name, issue.number,
+                    )
+                    continue
+
+                log.info("[%s] Processing issue #%d: %s (trigger=%s)",
+                         repo_name, issue.number, issue.title, trigger.value)
                 self.process_issue(issue, trigger)
                 processed += 1
 
