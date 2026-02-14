@@ -12,13 +12,35 @@ class Config:
     target_repos: tuple[str, ...] = ()
     anthropic_api_key: str = ""
     poll_interval: int = 60
+
+    # Labeling
     issue_label: str = "jarvis"
+    ready_label: str = "jarvis-ready"
     done_label: str = "jarvis-done"
+    needs_human_label: str = "jarvis-needs-human"
+
+    # Model routing labels
+    model_label_claude: str = "jarvis-cl"
+    model_label_codex: str = "jarvis-co"
+    model_label_gemini: str = "jarvis-gem"
+
     workspace_dir: str = "/tmp/jarvis-workspace"
     db_path: str = "jarvis.db"
     branch_prefix: str = "jarvis/issue-"
+
+    # Agent models
     claude_model: str = "sonnet"
-    claude_max_budget: str = "5.00"
+    codex_model: str = ""
+    gemini_model: str = ""
+
+    # Reviewer loop
+    review_rounds: int = 2
+    reviewer_backend_order: str = "gemini,claude,codex"
+
+    # Optional test command run by Jarvis (not by the LLM)
+    test_cmd: str = ""
+    test_timeout_s: int = 900
+
     webhook_port: int = 8080
     webhook_secret: str = ""
     log_level: str = "INFO"
@@ -44,13 +66,30 @@ class Config:
             target_repos=repos,
             anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY", ""),
             poll_interval=int(os.environ.get("POLL_INTERVAL", "60")),
+
             issue_label=os.environ.get("ISSUE_LABEL", "jarvis"),
+            ready_label=os.environ.get("READY_LABEL", "jarvis-ready"),
             done_label=os.environ.get("DONE_LABEL", "jarvis-done"),
+            needs_human_label=os.environ.get("NEEDS_HUMAN_LABEL", "jarvis-needs-human"),
+
+            model_label_claude=os.environ.get("MODEL_LABEL_CLAUDE", "jarvis-cl"),
+            model_label_codex=os.environ.get("MODEL_LABEL_CODEX", "jarvis-co"),
+            model_label_gemini=os.environ.get("MODEL_LABEL_GEMINI", "jarvis-gem"),
+
             workspace_dir=os.environ.get("WORKSPACE_DIR", "/tmp/jarvis-workspace"),
             db_path=os.environ.get("DB_PATH", "jarvis.db"),
             branch_prefix=os.environ.get("BRANCH_PREFIX", "jarvis/issue-"),
+
             claude_model=os.environ.get("CLAUDE_MODEL", "sonnet"),
-            claude_max_budget=os.environ.get("CLAUDE_MAX_BUDGET", "5.00"),
+            codex_model=os.environ.get("CODEX_MODEL", ""),
+            gemini_model=os.environ.get("GEMINI_MODEL", ""),
+
+            review_rounds=int(os.environ.get("REVIEW_ROUNDS", "2")),
+            reviewer_backend_order=os.environ.get("REVIEWER_BACKEND_ORDER", "gemini,claude,codex"),
+
+            test_cmd=os.environ.get("TEST_CMD", ""),
+            test_timeout_s=int(os.environ.get("TEST_TIMEOUT_S", "900")),
+
             webhook_port=int(os.environ.get("WEBHOOK_PORT", "8080")),
             webhook_secret=os.environ.get("WEBHOOK_SECRET", ""),
             log_level=os.environ.get("LOG_LEVEL", "INFO"),
@@ -76,5 +115,7 @@ class Config:
             errors.append("TARGET_REPO is required (comma-separated for multiple)")
         for repo in self.target_repos:
             if "/" not in repo:
-                errors.append(f"TARGET_REPO '{repo}' must be in owner/repo format (e.g. BrianTruong23/my-project)")
+                errors.append(
+                    f"TARGET_REPO '{repo}' must be in owner/repo format (e.g. BrianTruong23/my-project)"
+                )
         return errors

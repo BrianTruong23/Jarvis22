@@ -4,11 +4,20 @@ from __future__ import annotations
 
 import logging
 import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 
 from jarvis.config import Config
 
 log = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class CmdResult:
+    cmd: str
+    exit_code: int
+    stdout: str
+    stderr: str
 
 
 class Workspace:
@@ -22,14 +31,14 @@ class Workspace:
     def repo_dir(self) -> Path:
         return self._repo_dir
 
-    def _run(self, cmd: list[str], cwd: Path | None = None) -> str:
+    def _run(self, cmd: list[str], cwd: Path | None = None, timeout: int = 120) -> str:
         log.debug("Running: %s (cwd=%s)", " ".join(cmd), cwd)
         result = subprocess.run(
             cmd,
             cwd=cwd or self._repo_dir,
             capture_output=True,
             text=True,
-            timeout=120,
+            timeout=timeout,
         )
         if result.returncode != 0:
             raise RuntimeError(f"Command failed: {' '.join(cmd)}\nstderr: {result.stderr}")
@@ -48,6 +57,7 @@ class Workspace:
             self._run(
                 ["git", "clone", self._clone_url, str(self._repo_dir)],
                 cwd=self._repo_dir.parent,
+                timeout=600,
             )
         self._run(["git", "config", "user.email", "jarvis@bot.dev"])
         self._run(["git", "config", "user.name", "Jarvis"])
@@ -58,6 +68,10 @@ class Workspace:
             if "HEAD branch" in line:
                 return line.split(":")[-1].strip()
         return "main"
+
+    def base_ref(self) -> str:
+        default = self._get_default_branch()
+        return f"origin/{default}"
 
     def create_branch(self, branch: str) -> None:
         try:
@@ -74,38 +88,36 @@ class Workspace:
         self._run(["git", "checkout", "-b", branch, f"origin/{default}"])
         log.info("[%s] Created branch %s", self._repo_name, branch)
 
-    def check_diff_limits(self, max_files: int, max_loc: int) -> tuple[bool, str]:
-        """Check if the current diff exceeds file/LOC limits.
+    def has_changes(self) -> bool:
+        status = self._run(["git", "status", "--porcelain"])
+        return bool(status)
 
-        Returns (within_limits, detail_message).
-        """
-        try:
-            numstat = self._run(["git", "diff", "--numstat", "HEAD"])
-        except RuntimeError:
-            return True, "No diff to check"
+    def diffstat(self, max_lines: int = 200) -> str:
+        base = self.base_ref()
+        out = self._run(["git", "diff", "--stat", f"{base}...HEAD"]) or "(no diff)"
+        lines = out.splitlines()
+        return "\n".join(lines[:max_lines])
 
-        if not numstat:
-            return True, "No changes"
+    def diff(self, max_chars: int = 40000) -> str:
+        base = self.base_ref()
+        out = self._run(["git", "diff", f"{base}...HEAD"]) or "(no diff)"
+        if len(out) > max_chars:
+            return out[:max_chars] + "\n\n...(truncated)"
+        return out
 
-        files_changed = 0
-        total_loc = 0
-        for line in numstat.splitlines():
-            parts = line.split("\t")
-            if len(parts) < 3:
-                continue
-            files_changed += 1
-            added = int(parts[0]) if parts[0] != "-" else 0
-            removed = int(parts[1]) if parts[1] != "-" else 0
-            total_loc += added + removed
+    def run_test_cmd(self, cmd: str, timeout_s: int) -> CmdResult:
+        if not cmd.strip():
+            return CmdResult(cmd=cmd, exit_code=0, stdout="(no TEST_CMD configured)", stderr="")
 
-        detail = f"{files_changed} files changed, {total_loc} LOC"
-
-        if files_changed > max_files:
-            return False, f"Exceeds file limit: {detail} (max {max_files} files)"
-        if total_loc > max_loc:
-            return False, f"Exceeds LOC limit: {detail} (max {max_loc} LOC)"
-
-        return True, detail
+        log.info("[%s] Running TEST_CMD: %s", self._repo_name, cmd)
+        p = subprocess.run(
+            ["bash", "-lc", cmd],
+            cwd=self._repo_dir,
+            capture_output=True,
+            text=True,
+            timeout=timeout_s,
+        )
+        return CmdResult(cmd=cmd, exit_code=p.returncode, stdout=p.stdout or "", stderr=p.stderr or "")
 
     def commit_and_push(self, branch: str, message: str) -> bool:
         status = self._run(["git", "status", "--porcelain"])

@@ -1,76 +1,86 @@
-"""Claude Code / Codex CLI subprocess spawning with fallback."""
+"""Coding agent subprocess orchestration with model fallback.
+
+Jarvis22 uses two roles per issue:
+- implementer: makes code changes
+- reviewer: reviews diff + test output and requests changes
+
+Both roles can be routed to different backends (claude/codex/gemini).
+"""
 
 from __future__ import annotations
 
-import json
 import logging
 import os
-import shlex
 import subprocess
 from pathlib import Path
 
 from jarvis.config import Config
-from jarvis.models import AgentResult, IssueContext
+from jarvis.models import IssueContext
 
 log = logging.getLogger(__name__)
 
-
-class RateLimitError(RuntimeError):
-    """Raised when Claude hits a rate limit."""
-
-
-class AgentTimeoutError(RuntimeError):
-    """Raised when an agent exceeds its time budget."""
-
-    def __init__(self, partial_output: str, agent_name: str, elapsed: float) -> None:
-        self.partial_output = partial_output
-        self.agent_name = agent_name
-        self.elapsed = elapsed
-        super().__init__(f"{agent_name} timed out after {elapsed:.0f}s")
-
-
-SYSTEM_PROMPT = """\
+IMPLEMENTER_SYSTEM_PROMPT = """\
 You are solving a GitHub issue. Read the issue carefully and implement the requested changes.
 
 IMPORTANT RULES:
 - Do NOT run git commands (no git add, commit, push, etc). The orchestrator handles git.
 - Do NOT create pull requests.
-- Do NOT merge to main.
 - Focus on writing/modifying code to solve the issue.
 - If you need to create new files, do so.
-- Always run tests after your changes, or explain why tests cannot be run.
-- If you are blocked and cannot proceed, output a line starting with "BLOCKED:" followed by one precise question. Do NOT guess.
-- Keep changes minimal and focused on the issue.
+- If tests exist, make sure they still pass after your changes.
+"""
+
+REVIEWER_SYSTEM_PROMPT = """\
+You are a code reviewer.
+
+You will be given:
+- the GitHub issue
+- a git diff (and diffstat)
+- optional test output
+
+Your job:
+- decide if the change is acceptable
+- if not acceptable, request concrete changes
+
+Output format MUST be:
+VERDICT: APPROVE | CHANGES_REQUESTED
+SUMMARY: <1-4 sentences>
+NOTES:
+- <bullets>
+TESTING:
+- <bullets>
 """
 
 
-def build_prompt(issue: IssueContext) -> str:
-    return f"""\
-GitHub Issue #{issue.number}: {issue.title}
-
-{issue.body}
-
-Solve this issue. Remember: do NOT run any git commands. Run tests if possible."""
+class AgentUnavailableError(RuntimeError):
+    """Temporary capacity/limit/auth availability error; try next backend or retry later."""
 
 
-def _run_claude(config: Config, issue: IssueContext, work_dir: Path) -> AgentResult:
-    """Run Claude Code CLI with JSON output for token tracking."""
-    prompt = build_prompt(issue)
-    cmd = [
-        "claude",
-        "--print",
-        "--output-format", "json",
-        "--dangerously-skip-permissions",
-        "--model", config.claude_model,
-        "--max-turns", "30",
-    ]
+UNAVAILABLE_PATTERNS = (
+    "rate limit",
+    "quota",
+    "usage limit",
+    "credit",
+    "insufficient",
+    "429",
+    "temporarily unavailable",
+    "try again later",
+    "overloaded",
+    "max turns",
+    "max-turns",
+    "timeout",
+    "timed out",
+    "pass --to",
+)
 
-    log.info("Spawning Claude Code for issue #%d in %s", issue.number, work_dir)
 
-    env = os.environ.copy()
-    if config.anthropic_api_key:
-        env["ANTHROPIC_API_KEY"] = config.anthropic_api_key
+def _is_unavailable_error(text: str) -> bool:
+    low = text.lower()
+    return any(p in low for p in UNAVAILABLE_PATTERNS)
 
+
+def _run_cmd(name: str, cmd: list[str], prompt: str, work_dir: Path, env: dict[str, str], timeout: int = 900) -> str:
+    log.info("Spawning %s in %s", name, work_dir)
     try:
         result = subprocess.run(
             cmd,
@@ -78,102 +88,156 @@ def _run_claude(config: Config, issue: IssueContext, work_dir: Path) -> AgentRes
             cwd=work_dir,
             capture_output=True,
             text=True,
-            timeout=config.issue_timeout,
+            timeout=timeout,
             env=env,
         )
     except subprocess.TimeoutExpired as e:
-        partial = (e.stdout or "") if isinstance(e.stdout, str) else (e.stdout or b"").decode(errors="replace")
-        raise AgentTimeoutError(partial, "claude", config.issue_timeout)
+        raise AgentUnavailableError(f"{name} unavailable: timeout after {timeout}s") from e
 
+    output = result.stdout or ""
     stderr = result.stderr or ""
+    combined = f"{output}\n{stderr}".strip()
 
-    # Detect rate limits
+    # Some CLIs return exit=0 but print limit/turn exhaustion.
+    if _is_unavailable_error(combined):
+        raise AgentUnavailableError(f"{name} unavailable: {stderr[:300] or output[:300]}")
+
     if result.returncode != 0:
-        stderr_lower = stderr.lower()
-        if "rate limit" in stderr_lower or "429" in stderr_lower or "too many requests" in stderr_lower:
-            log.warning("Claude hit rate limit: %s", stderr[:300])
-            raise RateLimitError(f"Claude rate limited: {stderr[:300]}")
-        error_msg = stderr or "Unknown error"
-        log.error("Claude Code failed (exit %d): %s", result.returncode, error_msg[:500])
-        raise RuntimeError(f"Claude Code exited with code {result.returncode}: {error_msg}")
+        raise RuntimeError(f"{name} exited with code {result.returncode}: {stderr[:500] or output[:500]}")
 
-    # Parse JSON output for token tracking
-    raw_output = result.stdout
-    output_text = raw_output
-    input_tokens = 0
-    output_tokens = 0
-    total_tokens = 0
-
-    try:
-        data = json.loads(raw_output)
-        # Claude --output-format json returns { result: str, ... usage info }
-        if isinstance(data, dict):
-            output_text = data.get("result", raw_output)
-            usage = data.get("usage", {})
-            input_tokens = usage.get("input_tokens", 0)
-            output_tokens = usage.get("output_tokens", 0)
-            total_tokens = input_tokens + output_tokens
-    except (json.JSONDecodeError, TypeError):
-        output_text = raw_output
-
-    log.info("Claude completed for issue #%d (%d tokens used)", issue.number, total_tokens)
-
-    return AgentResult(
-        output=output_text,
-        agent_name="claude",
-        input_tokens=input_tokens,
-        output_tokens=output_tokens,
-        total_tokens=total_tokens,
-    )
+    return output
 
 
-def _run_codex(config: Config, issue: IssueContext, work_dir: Path) -> AgentResult:
-    """Run Codex CLI as fallback agent."""
-    prompt = build_prompt(issue)
-    binary_parts = shlex.split(config.codex_binary)
-    cmd = binary_parts + [
-        "exec",
-        "--full-auto",
-        "--model", config.codex_model,
-        "--cd", str(work_dir),
-        prompt,
-    ]
+def implementer_prompt(issue: IssueContext, extra_instructions: str = "") -> str:
+    labels_text = ", ".join(issue.labels) if issue.labels else "(none)"
+    extra = f"\n\nAdditional instructions:\n{extra_instructions.strip()}" if extra_instructions.strip() else ""
+    return f"""\
+{IMPLEMENTER_SYSTEM_PROMPT}
 
-    log.info("Spawning Codex for issue #%d in %s", issue.number, work_dir)
+GitHub Issue #{issue.number}: {issue.title}
 
+Repo: {issue.repo}
+Labels: {labels_text}
+
+{issue.body}{extra}
+
+Solve this issue. Remember: do NOT run any git commands."""
+
+
+def reviewer_prompt(issue: IssueContext, diffstat: str, diff: str, test_output: str = "") -> str:
+    labels_text = ", ".join(issue.labels) if issue.labels else "(none)"
+    test_block = ""
+    if test_output.strip():
+        test_block = f"\n\nTEST OUTPUT (most recent):\n{test_output.strip()}"
+
+    return f"""\
+{REVIEWER_SYSTEM_PROMPT}
+
+GitHub Issue #{issue.number}: {issue.title}
+
+Repo: {issue.repo}
+Labels: {labels_text}
+
+ISSUE BODY:\n{issue.body}
+
+DIFFSTAT:\n{diffstat}
+
+DIFF:\n{diff}{test_block}
+"""
+
+
+def backend_order(config: Config, issue: IssueContext) -> list[str]:
+    labels = {l.lower() for l in issue.labels}
+
+    preferred = ""
+    if config.model_label_claude.lower() in labels:
+        preferred = "claude"
+    elif config.model_label_codex.lower() in labels:
+        preferred = "codex"
+    elif config.model_label_gemini.lower() in labels:
+        preferred = "gemini"
+
+    default_order = ["claude", "codex", "gemini"]
+    if not preferred:
+        return default_order
+    return [preferred] + [name for name in default_order if name != preferred]
+
+
+def reviewer_backend_order(config: Config, issue: IssueContext) -> list[str]:
+    # Respect explicit model labels if present; otherwise use configured order.
+    explicit = backend_order(config, issue)
+    labels = {l.lower() for l in issue.labels}
+    if labels.intersection(
+        {
+            config.model_label_claude.lower(),
+            config.model_label_codex.lower(),
+            config.model_label_gemini.lower(),
+        }
+    ):
+        return explicit
+
+    raw = [p.strip().lower() for p in config.reviewer_backend_order.split(",") if p.strip()]
+    order = [b for b in raw if b in {"claude", "codex", "gemini"}]
+    # Ensure all are present at least once
+    for b in ("claude", "codex", "gemini"):
+        if b not in order:
+            order.append(b)
+    return order
+
+
+def run_backend(config: Config, work_dir: Path, backend: str, prompt: str) -> str:
     env = os.environ.copy()
+    if config.anthropic_api_key:
+        env["ANTHROPIC_API_KEY"] = config.anthropic_api_key
 
-    try:
-        result = subprocess.run(
-            cmd,
-            cwd=work_dir,
-            capture_output=True,
-            text=True,
-            timeout=config.issue_timeout,
-            env=env,
-        )
-    except subprocess.TimeoutExpired as e:
-        partial = (e.stdout or "") if isinstance(e.stdout, str) else (e.stdout or b"").decode(errors="replace")
-        raise AgentTimeoutError(partial, "codex", config.issue_timeout)
+    if backend == "claude":
+        cmd = [
+            "claude",
+            "--print",
+            "--dangerously-skip-permissions",
+            "--model",
+            config.claude_model,
+            "--max-turns",
+            "30",
+        ]
+        out = _run_cmd("claude", cmd, prompt, work_dir, env)
+        return f"[backend:claude]\n{out}"
 
-    output = result.stdout
-    if result.returncode != 0:
-        error_msg = result.stderr or "Unknown error"
-        log.error("Codex failed (exit %d): %s", result.returncode, error_msg[:500])
-        raise RuntimeError(f"Codex exited with code {result.returncode}: {error_msg}")
+    if backend == "codex":
+        # Prefer real Codex CLI if available. Some environments have a wrapper
+        # that routes through OpenClaw; we still treat it as a backend.
+        cmd = ["codex", "exec", "--full-auto", prompt]
+        if config.codex_model:
+            cmd = ["codex", "exec", "--full-auto", "--model", config.codex_model, prompt]
+        try:
+            out = _run_cmd("codex", cmd, prompt, work_dir, env)
+        except RuntimeError:
+            out = _run_cmd("codex", ["codex", prompt], prompt, work_dir, env)
+        return f"[backend:codex]\n{out}"
 
-    log.info("Codex completed for issue #%d (%d chars output)", issue.number, len(output))
+    if backend == "gemini":
+        cmd = ["gemini", "--approval-mode", "yolo", "-p", prompt]
+        if config.gemini_model:
+            cmd = ["gemini", "--approval-mode", "yolo", "--model", config.gemini_model, "-p", prompt]
+        out = _run_cmd("gemini", cmd, prompt, work_dir, env)
+        return f"[backend:gemini]\n{out}"
 
-    return AgentResult(
-        output=output,
-        agent_name="codex",
-    )
+    raise RuntimeError(f"Unknown backend: {backend}")
 
 
-def run_agent(config: Config, issue: IssueContext, work_dir: Path) -> AgentResult:
-    """Try Claude first; on rate limit, fall back to Codex."""
-    try:
-        return _run_claude(config, issue, work_dir)
-    except RateLimitError:
-        log.warning("Claude rate-limited, falling back to Codex for issue #%d", issue.number)
-        return _run_codex(config, issue, work_dir)
+def parse_reviewer_verdict(text: str) -> tuple[str, str]:
+    """Return (verdict, normalized_text)."""
+    t = (text or "").strip()
+    low = t.lower()
+    if "verdict:" in low:
+        for line in t.splitlines():
+            if line.lower().startswith("verdict:"):
+                v = line.split(":", 1)[1].strip().upper()
+                if "APPROVE" in v:
+                    return "APPROVE", t
+                if "CHANGES" in v:
+                    return "CHANGES_REQUESTED", t
+    # Fallback heuristic
+    if "approve" in low and "changes" not in low:
+        return "APPROVE", t
+    return "CHANGES_REQUESTED", t

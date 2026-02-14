@@ -157,16 +157,25 @@ class Database:
         return [self._row_to_run(r) for r in rows]
 
     def is_issue_claimed(self, issue_number: int, repo: str = "") -> bool:
-        """Check if issue has a pending, running, or successful run."""
+        """Check if issue has an in-flight or terminal run.
+
+        DEFERRED is intentionally excluded so the next poll cycle can retry.
+        """
+        claimed = (
+            RunStatus.PENDING.value,
+            RunStatus.RUNNING.value,
+            RunStatus.SUCCESS.value,
+            RunStatus.NEEDS_HUMAN.value,
+        )
         with self._connect() as conn:
             if repo:
                 row = conn.execute(
-                    "SELECT COUNT(*) as cnt FROM runs WHERE issue_number = ? AND repo = ? AND status IN (?, ?, ?)",
-                    (issue_number, repo, RunStatus.PENDING.value, RunStatus.RUNNING.value, RunStatus.SUCCESS.value),
+                    "SELECT COUNT(*) as cnt FROM runs WHERE issue_number = ? AND repo = ? AND status IN (?, ?, ?, ?)",
+                    (issue_number, repo, *claimed),
                 ).fetchone()
             else:
                 row = conn.execute(
-                    "SELECT COUNT(*) as cnt FROM runs WHERE issue_number = ? AND status IN (?, ?, ?)",
-                    (issue_number, RunStatus.PENDING.value, RunStatus.RUNNING.value, RunStatus.SUCCESS.value),
+                    "SELECT COUNT(*) as cnt FROM runs WHERE issue_number = ? AND status IN (?, ?, ?, ?)",
+                    (issue_number, *claimed),
                 ).fetchone()
         return row["cnt"] > 0

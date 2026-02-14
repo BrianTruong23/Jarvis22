@@ -44,27 +44,26 @@ class WebhookHandler(BaseHTTPRequestHandler):
             return
 
         label_name = payload.get("label", {}).get("name", "")
-        trigger_labels = {self.config.issue_label, self.config.ready_label}
-        if label_name not in trigger_labels:
+        allowed = {
+            self.config.issue_label,
+            self.config.ready_label,
+            self.config.model_label_claude,
+            self.config.model_label_codex,
+            self.config.model_label_gemini,
+        }
+        if label_name not in allowed:
             self._respond(200, {"status": "ignored", "label": label_name})
             return
 
-        # Require both jarvis + ready labels on the issue for real-time processing
-        issue_labels = [l.get("name", "") for l in payload.get("issue", {}).get("labels", [])]
-        if not (self.config.issue_label in issue_labels and self.config.ready_label in issue_labels):
-            self._respond(200, {"status": "ignored", "reason": "missing required labels"})
-            return
-
-        # Extract repo full_name from webhook payload
         repo_name = payload.get("repository", {}).get("full_name", "")
         if repo_name not in self.config.target_repos:
             self._respond(200, {"status": "ignored", "repo": repo_name})
             return
 
         issue_number = payload["issue"]["number"]
-        log.info("Webhook: [%s] issue #%d labeled with %s (both labels present)", repo_name, issue_number, label_name)
+        log.info("Webhook: [%s] issue #%d labeled with %s", repo_name, issue_number, label_name)
 
-        self._respond(200, {"status": "accepted", "repo": repo_name, "issue": issue_number})
+        self._respond(200, {"status": "accepted", "repo": repo_name, "issue": issue_number, "label": label_name})
 
         try:
             self.orchestrator.run_single(issue_number, repo_name, Trigger.WEBHOOK)
@@ -79,9 +78,7 @@ class WebhookHandler(BaseHTTPRequestHandler):
         if not signature:
             log.warning("Missing X-Hub-Signature-256 header")
             return False
-        expected = "sha256=" + hmac.new(
-            secret.encode(), body, hashlib.sha256
-        ).hexdigest()
+        expected = "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
         return hmac.compare_digest(signature, expected)
 
     def _respond(self, status: int, data: dict) -> None:
