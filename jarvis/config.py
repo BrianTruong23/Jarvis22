@@ -41,8 +41,7 @@ class Config:
     test_cmd: str = ""
     test_timeout_s: int = 900
 
-    webhook_port: int = 8080
-    webhook_secret: str = ""
+    # Additional guardrails / reporting
     log_level: str = "INFO"
     session_timeout: int = 7200
     issue_timeout: int = 1800
@@ -51,11 +50,12 @@ class Config:
     max_tokens_per_run: int = 180000
     token_warning_buffer: int = 5000
     codex_binary: str = "node /usr/lib/node_modules/@openai/codex/bin/codex.js"
-    codex_model: str = "o4-mini"
     reports_dir: str = "reports"
     jarvis_repo_dir: str = ""
     publish: bool = False
-    ready_label: str = "ready"
+
+    webhook_port: int = 8080
+    webhook_secret: str = ""
 
     @classmethod
     def from_env(cls) -> Config:
@@ -92,6 +92,7 @@ class Config:
 
             webhook_port=int(os.environ.get("WEBHOOK_PORT", "8080")),
             webhook_secret=os.environ.get("WEBHOOK_SECRET", ""),
+
             log_level=os.environ.get("LOG_LEVEL", "INFO"),
             session_timeout=int(os.environ.get("SESSION_TIMEOUT", "7200")),
             issue_timeout=int(os.environ.get("ISSUE_TIMEOUT", "1800")),
@@ -100,11 +101,9 @@ class Config:
             max_tokens_per_run=int(os.environ.get("MAX_TOKENS_PER_RUN", "180000")),
             token_warning_buffer=int(os.environ.get("TOKEN_WARNING_BUFFER", "5000")),
             codex_binary=os.environ.get("CODEX_BINARY", "node /usr/lib/node_modules/@openai/codex/bin/codex.js"),
-            codex_model=os.environ.get("CODEX_MODEL", "o4-mini"),
             reports_dir=os.environ.get("REPORTS_DIR", "reports"),
             jarvis_repo_dir=os.environ.get("JARVIS_REPO_DIR", ""),
             publish=os.environ.get("PUBLISH", "").lower() in ("true", "1", "yes"),
-            ready_label=os.environ.get("READY_LABEL", "ready"),
         )
 
     def validate(self) -> list[str]:
