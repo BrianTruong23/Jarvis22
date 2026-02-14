@@ -50,11 +50,12 @@ class Database:
     def _migrate(self, conn: sqlite3.Connection) -> None:
         cursor = conn.execute("PRAGMA table_info(runs)")
         columns = {row[1] for row in cursor.fetchall()}
-        for sql in MIGRATIONS:
-            try:
-                conn.execute(sql)
-            except sqlite3.OperationalError:
-                pass
+        if "repo" not in columns or "agent_name" not in columns or "tokens_used" not in columns:
+            for sql in MIGRATIONS:
+                try:
+                    conn.execute(sql)
+                except sqlite3.OperationalError:
+                    pass
 
     def _row_to_run(self, row: sqlite3.Row) -> Run:
         return Run(
