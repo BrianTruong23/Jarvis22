@@ -35,20 +35,25 @@ class GitHubClient:
         return f"https://x-access-token:{self._config.github_token}@github.com/{self._repo_name}.git"
 
     def get_labeled_issues(self) -> list[IssueContext]:
-        issues: list[IssueContext] = []
-        for issue in self._repo.get_issues(state="open", labels=[self._config.issue_label]):
-            if issue.pull_request is not None:
-                continue
-            issues.append(
-                IssueContext(
+        issues_by_number: dict[int, IssueContext] = {}
+        watched = set(self._config.issue_labels)
+
+        for label in self._config.issue_labels:
+            for issue in self._repo.get_issues(state="open", labels=[label]):
+                if issue.pull_request is not None:
+                    continue
+                issue_labels = [l.name for l in issue.labels]
+                if not watched.intersection(issue_labels):
+                    continue
+                issues_by_number[issue.number] = IssueContext(
                     number=issue.number,
                     title=issue.title,
                     body=issue.body or "",
                     repo=self._repo_name,
-                    labels=[l.name for l in issue.labels],
+                    labels=issue_labels,
                 )
-            )
-        return issues
+
+        return sorted(issues_by_number.values(), key=lambda x: x.number)
 
     def get_issue(self, number: int) -> IssueContext:
         issue: Issue = self._repo.get_issue(number)
@@ -78,9 +83,10 @@ class GitHubClient:
 
     def swap_labels(self, issue_number: int) -> None:
         issue = self._repo.get_issue(issue_number)
-        try:
-            issue.remove_from_labels(self._config.issue_label)
-        except Exception:
-            log.debug("Label %s not found on issue #%d", self._config.issue_label, issue_number)
+        for lbl in self._config.issue_labels:
+            try:
+                issue.remove_from_labels(lbl)
+            except Exception:
+                log.debug("Label %s not found on issue #%d", lbl, issue_number)
         issue.add_to_labels(self._config.done_label)
         log.info("[%s] Swapped labels on issue #%d", self._repo_name, issue_number)

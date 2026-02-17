@@ -14,11 +14,13 @@ log = logging.getLogger(__name__)
 def run_poller(config: Config) -> None:
     orch = Orchestrator(config)
     repos = ", ".join(config.target_repos)
+    labels = ", ".join(config.issue_labels)
     log.info(
-        "Starting poller: repos=[%s], label=%s, interval=%ds",
+        "Starting poller: repos=[%s], labels=[%s], interval=%ds, max_issues_per_poll=%d",
         repos,
-        config.issue_label,
+        labels,
         config.poll_interval,
+        config.max_issues_per_poll,
     )
 
     while True:

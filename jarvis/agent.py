@@ -34,21 +34,22 @@ Solve this issue. Remember: do NOT run any git commands."""
 
 
 def run_agent(config: Config, issue: IssueContext, work_dir: Path) -> str:
+    model = config.claude_model.strip()
+    if "gemini" in model.lower():
+        raise RuntimeError("Gemini model is not allowed in Jarvis22. Use a Claude model (e.g., sonnet).")
+
     prompt = build_prompt(issue)
     cmd = [
         "claude",
         "--print",
         "--dangerously-skip-permissions",
-        "--model", config.claude_model,
+        "--model", model,
         "--max-turns", "30",
     ]
 
     log.info("Spawning Claude Code for issue #%d in %s", issue.number, work_dir)
     log.debug("Prompt: %s", prompt[:200])
 
-    # Inherit the current environment so Claude Code can use existing auth
-    # (OAuth login via `claude login` for Claude Plus subscribers).
-    # ANTHROPIC_API_KEY is passed through if set, but is not required.
     env = os.environ.copy()
     if config.anthropic_api_key:
         env["ANTHROPIC_API_KEY"] = config.anthropic_api_key

@@ -46,16 +46,13 @@ class Orchestrator:
         try:
             self.db.update_run(run_id, status=RunStatus.RUNNING, branch=branch)
 
-            # Setup workspace
             handler.workspace.ensure_repo()
             handler.workspace.create_branch(branch)
 
-            # Run agent
             output = run_agent(self.config, issue, handler.workspace.repo_dir)
             self.db.update_run(run_id, agent_output=output)
 
-            # Commit and push
-            commit_msg = f"fix: resolve issue #{issue.number} — {issue.title}"
+            commit_msg = f"fix: resolve issue #{issue.number} - {issue.title}"
             pushed = handler.workspace.commit_and_push(branch, commit_msg)
 
             if not pushed:
@@ -68,11 +65,10 @@ class Orchestrator:
                 handler.gh.comment_on_issue(issue.number, comment)
                 return
 
-            # Create PR
             pr_body = self._build_pr_body(issue, output)
             pr_url = handler.gh.create_pr(
                 branch=branch,
-                title=f"fix: resolve #{issue.number} — {issue.title}",
+                title=f"fix: resolve #{issue.number} - {issue.title}",
                 body=pr_body,
             )
 
@@ -107,6 +103,8 @@ class Orchestrator:
                 continue
 
             for issue in issues:
+                if processed >= self.config.max_issues_per_poll:
+                    return processed
                 if self.db.is_issue_claimed(issue.number, repo=repo_name):
                     log.debug("[%s] Issue #%d already claimed, skipping", repo_name, issue.number)
                     continue
@@ -120,6 +118,10 @@ class Orchestrator:
     def run_single(self, issue_number: int, repo_name: str, trigger: Trigger = Trigger.CLI) -> None:
         handler = self._get_handler(repo_name)
         issue = handler.gh.get_issue(issue_number)
+        if not set(issue.labels).intersection(set(self.config.issue_labels)):
+            raise ValueError(
+                f"Issue #{issue_number} in {repo_name} does not have an allowed label: {self.config.issue_labels}"
+            )
         self.process_issue(issue, trigger)
 
     def _build_pr_body(self, issue: IssueContext, agent_output: str) -> str:

@@ -44,11 +44,10 @@ class WebhookHandler(BaseHTTPRequestHandler):
             return
 
         label_name = payload.get("label", {}).get("name", "")
-        if label_name != self.config.issue_label:
+        if label_name not in self.config.issue_labels:
             self._respond(200, {"status": "ignored", "label": label_name})
             return
 
-        # Extract repo full_name from webhook payload
         repo_name = payload.get("repository", {}).get("full_name", "")
         if repo_name not in self.config.target_repos:
             self._respond(200, {"status": "ignored", "repo": repo_name})
