@@ -15,11 +15,14 @@ def run_poller(config: Config) -> None:
     orch = Orchestrator(config)
     repos = ", ".join(config.target_repos)
     log.info(
-        "Starting poller: repos=[%s], jarvis_label=%s, ready_label=%s, interval=%ds",
+        "Starting poller: repos=[%s], labels=[%s,%s,%s,%s], interval=%ds, max_issues_per_poll=%d",
         repos,
         config.issue_label,
-        config.ready_label,
+        config.model_label_claude,
+        config.model_label_codex,
+        config.model_label_gemini,
         config.poll_interval,
+        config.max_issues_per_poll,
     )
 
     while True:

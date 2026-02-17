@@ -155,9 +155,9 @@ def backend_order(config: Config, issue: IssueContext) -> list[str]:
     elif config.model_label_codex.lower() in labels:
         preferred = "codex"
     elif config.model_label_gemini.lower() in labels:
-        preferred = "gemini"
+        preferred = "claude"
 
-    default_order = ["claude", "codex", "gemini"]
+    default_order = ["claude", "codex"]
     if not preferred:
         return default_order
     return [preferred] + [name for name in default_order if name != preferred]
@@ -177,9 +177,9 @@ def reviewer_backend_order(config: Config, issue: IssueContext) -> list[str]:
         return explicit
 
     raw = [p.strip().lower() for p in config.reviewer_backend_order.split(",") if p.strip()]
-    order = [b for b in raw if b in {"claude", "codex", "gemini"}]
+    order = [b for b in raw if b in {"claude", "codex"}]
     # Ensure all are present at least once
-    for b in ("claude", "codex", "gemini"):
+    for b in ("claude", "codex"):
         if b not in order:
             order.append(b)
     return order
@@ -216,11 +216,7 @@ def run_backend(config: Config, work_dir: Path, backend: str, prompt: str) -> st
         return f"[backend:codex]\n{out}"
 
     if backend == "gemini":
-        cmd = ["gemini", "--approval-mode", "yolo", "-p", prompt]
-        if config.gemini_model:
-            cmd = ["gemini", "--approval-mode", "yolo", "--model", config.gemini_model, "-p", prompt]
-        out = _run_cmd("gemini", cmd, prompt, work_dir, env)
-        return f"[backend:gemini]\n{out}"
+        raise AgentUnavailableError("gemini backend is disabled")
 
     raise RuntimeError(f"Unknown backend: {backend}")
 

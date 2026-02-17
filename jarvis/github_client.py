@@ -68,7 +68,17 @@ class GitHubClient:
         return issues
 
     def get_labeled_issues(self) -> list[IssueContext]:
-        return self.get_issues_with_label(self._config.issue_label)
+        labels = [
+            self._config.issue_label,
+            self._config.model_label_claude,
+            self._config.model_label_codex,
+            self._config.model_label_gemini,
+        ]
+        dedup: dict[int, IssueContext] = {}
+        for label in labels:
+            for issue in self.get_issues_with_label(label):
+                dedup[issue.number] = issue
+        return sorted(dedup.values(), key=lambda i: i.number)
 
     def get_issue(self, number: int) -> IssueContext:
         issue: Issue = self._repo.get_issue(number)
@@ -92,7 +102,7 @@ class GitHubClient:
 
     def mark_done(self, issue_number: int) -> None:
         issue = self._repo.get_issue(issue_number)
-        for label in (self._config.issue_label, self._config.ready_label):
+        for label in (self._config.issue_label, self._config.model_label_claude, self._config.model_label_codex, self._config.model_label_gemini):
             try:
                 issue.remove_from_labels(label)
             except Exception:
@@ -102,7 +112,7 @@ class GitHubClient:
 
     def mark_needs_human(self, issue_number: int) -> None:
         issue = self._repo.get_issue(issue_number)
-        for label in (self._config.issue_label, self._config.ready_label):
+        for label in (self._config.issue_label, self._config.model_label_claude, self._config.model_label_codex, self._config.model_label_gemini):
             try:
                 issue.remove_from_labels(label)
             except Exception:

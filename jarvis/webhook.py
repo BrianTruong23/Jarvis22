@@ -46,7 +46,6 @@ class WebhookHandler(BaseHTTPRequestHandler):
         label_name = payload.get("label", {}).get("name", "")
         allowed = {
             self.config.issue_label,
-            self.config.ready_label,
             self.config.model_label_claude,
             self.config.model_label_codex,
             self.config.model_label_gemini,

@@ -12,6 +12,7 @@ class Config:
     target_repos: tuple[str, ...] = ()
     anthropic_api_key: str = ""
     poll_interval: int = 60
+    max_issues_per_poll: int = 1
 
     # Labeling
     issue_label: str = "jarvis"
@@ -22,7 +23,7 @@ class Config:
     # Model routing labels
     model_label_claude: str = "jarvis-cl"
     model_label_codex: str = "jarvis-co"
-    model_label_gemini: str = "jarvis-gem"
+    model_label_gemini: str = "jarvis-ge"
 
     workspace_dir: str = "/tmp/jarvis-workspace"
     db_path: str = "jarvis.db"
@@ -35,7 +36,7 @@ class Config:
 
     # Reviewer loop
     review_rounds: int = 2
-    reviewer_backend_order: str = "gemini,claude,codex"
+    reviewer_backend_order: str = "claude,codex"
 
     # Optional test command run by Jarvis (not by the LLM)
     test_cmd: str = ""
@@ -66,6 +67,7 @@ class Config:
             target_repos=repos,
             anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY", ""),
             poll_interval=int(os.environ.get("POLL_INTERVAL", "60")),
+            max_issues_per_poll=max(1, int(os.environ.get("MAX_ISSUES_PER_POLL", "1"))),
 
             issue_label=os.environ.get("ISSUE_LABEL", "jarvis"),
             ready_label=os.environ.get("READY_LABEL", "jarvis-ready"),
@@ -74,7 +76,7 @@ class Config:
 
             model_label_claude=os.environ.get("MODEL_LABEL_CLAUDE", "jarvis-cl"),
             model_label_codex=os.environ.get("MODEL_LABEL_CODEX", "jarvis-co"),
-            model_label_gemini=os.environ.get("MODEL_LABEL_GEMINI", "jarvis-gem"),
+            model_label_gemini=os.environ.get("MODEL_LABEL_GEMINI", "jarvis-ge"),
 
             workspace_dir=os.environ.get("WORKSPACE_DIR", "/tmp/jarvis-workspace"),
             db_path=os.environ.get("DB_PATH", "jarvis.db"),
@@ -85,7 +87,7 @@ class Config:
             gemini_model=os.environ.get("GEMINI_MODEL", ""),
 
             review_rounds=int(os.environ.get("REVIEW_ROUNDS", "2")),
-            reviewer_backend_order=os.environ.get("REVIEWER_BACKEND_ORDER", "gemini,claude,codex"),
+            reviewer_backend_order=os.environ.get("REVIEWER_BACKEND_ORDER", "claude,codex"),
 
             test_cmd=os.environ.get("TEST_CMD", ""),
             test_timeout_s=int(os.environ.get("TEST_TIMEOUT_S", "900")),

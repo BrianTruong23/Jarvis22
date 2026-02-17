@@ -60,29 +60,13 @@ class Orchestrator:
 
     def should_process(self, issue: IssueContext, trigger: Trigger) -> bool:
         labels = {l.lower() for l in issue.labels}
-        issue_label = self.config.issue_label.lower()
-        ready_label = self.config.ready_label.lower()
-
-        if ready_label in labels:
-            return True
-
-        # jarvis-only: only on cron (poll)
-        if issue_label in labels and trigger != Trigger.POLL:
-            return False
-
-        # No label: only on cron (poll)
-        if not labels and trigger != Trigger.POLL:
-            return False
-
-        model_labels = {
+        allowed = {
+            self.config.issue_label.lower(),
             self.config.model_label_claude.lower(),
             self.config.model_label_codex.lower(),
             self.config.model_label_gemini.lower(),
         }
-        if labels.intersection(model_labels) and trigger != Trigger.POLL:
-            return False
-
-        return True
+        return bool(labels.intersection(allowed))
 
     def _run_implementer_until_changes(
         self,
@@ -293,23 +277,6 @@ class Orchestrator:
         processed = 0
 
         for repo_name, handler in self._handlers.items():
-            # 1) jarvis-ready first
-            try:
-                ready = handler.gh.get_issues_with_label(self.config.ready_label)
-            except Exception:
-                log.exception("Failed to fetch ready issues from %s", repo_name)
-                ready = []
-
-            for issue in ready:
-                if self.db.is_issue_claimed(issue.number, repo=repo_name):
-                    continue
-                if not self.should_process(issue, trigger):
-                    continue
-                log.info("[%s] Processing READY issue #%d: %s", repo_name, issue.number, issue.title)
-                self.process_issue(issue, trigger)
-                processed += 1
-
-            # 2) jarvis-labeled
             try:
                 issues = handler.gh.get_labeled_issues()
             except Exception:
@@ -317,6 +284,8 @@ class Orchestrator:
                 issues = []
 
             for issue in issues:
+                if processed >= self.config.max_issues_per_poll:
+                    return processed
                 if self.db.is_issue_claimed(issue.number, repo=repo_name):
                     continue
                 if not self.should_process(issue, trigger):
@@ -324,23 +293,6 @@ class Orchestrator:
                 log.info("[%s] Processing issue #%d: %s", repo_name, issue.number, issue.title)
                 self.process_issue(issue, trigger)
                 processed += 1
-
-            # 3) unlabeled issues (cron only)
-            if trigger == Trigger.POLL:
-                try:
-                    unlabeled = handler.gh.get_unlabeled_issues(limit=25)
-                except Exception:
-                    log.exception("Failed to fetch unlabeled issues from %s", repo_name)
-                    unlabeled = []
-
-                for issue in unlabeled:
-                    if self.db.is_issue_claimed(issue.number, repo=repo_name):
-                        continue
-                    if not self.should_process(issue, trigger):
-                        continue
-                    log.info("[%s] Processing UNLABELED issue #%d: %s", repo_name, issue.number, issue.title)
-                    self.process_issue(issue, trigger)
-                    processed += 1
 
         return processed
 
